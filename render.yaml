@@ -1,10 +1,6 @@
 services:
   - type: web
-    name: fieldhouse-frontend
-    runtime: static
+    name: fieldhouse
+    runtime: node
     buildCommand: npm install --include=dev && npm run build
-    staticPublishPath: ./dist
-    routes:
-      - type: rewrite
-        source: /*
-        destination: /index.html
+    startCommand: node server.js

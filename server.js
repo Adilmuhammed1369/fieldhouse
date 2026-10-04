@@ -5,6 +5,7 @@ import express from 'express'
 import jwt from 'jsonwebtoken'
 import mongoose from 'mongoose'
 import { createHmac, randomUUID, timingSafeEqual } from 'node:crypto'
+import path from 'node:path'
 import { GAMES, LOCATIONS } from './shared/booking-options.js'
 
 const app = express()
@@ -918,6 +919,11 @@ app.post('/api/bookings', requireAuth, async (request, response, next) => {
   } catch (error) {
     next(error)
   }
+})
+
+app.use(express.static(path.resolve('dist')))
+app.get(/^(?!\/api(?:\/|$)).*/, (_request, response) => {
+  response.sendFile(path.resolve('dist/index.html'))
 })
 
 app.use((error, _request, response, _next) => {

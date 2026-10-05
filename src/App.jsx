@@ -12,6 +12,7 @@ const api = async (path, options = {}) => {
 const today = () => new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' })
 const money = (value) => `₹${Number(value || 0).toLocaleString('en-IN')}`
 const prettyDate = (value) => new Date(value).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })
+const prettyTime = (value) => new Date(value).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Kolkata' })
 
 function AuthForm({ mode, onSuccess, onSwitch }) {
   const [form, setForm] = useState({ name: '', email: '', phone: '', password: '' })
@@ -66,7 +67,7 @@ function BookingPanel({ user, onAuth, onRefresh }) {
       {error && <p className="error full">{error}</p>}{message && <p className="success full">{message}</p>}
       <button className="primary full"> {user ? 'Confirm booking' : 'Sign in to book'} <span>→</span></button>
     </form>
-    <div className="availability"><h3>Confirmed times on {form.date}</h3>{bookings.length ? bookings.map((item) => <p key={item.reference}><strong>{item.game}</strong> · {item.startTime}–{item.endTime} · {item.reference}</p>) : <p>No bookings yet for this date.</p>}</div>
+    <div className="availability"><h3>Confirmed times on {form.date}</h3>{bookings.length ? bookings.map((item) => <p key={item.id}><strong>{item.game}</strong> · {prettyTime(item.startAt)}–{prettyTime(item.endAt)} · {item.id.slice(-8).toUpperCase()}</p>) : <p>No bookings yet for this date.</p>}</div>
   </section>
 }
 

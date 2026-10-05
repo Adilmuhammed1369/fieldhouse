@@ -13,6 +13,16 @@ const today = () => new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kol
 const money = (value) => `₹${Number(value || 0).toLocaleString('en-IN')}`
 const prettyDate = (value) => new Date(value).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })
 const prettyTime = (value) => new Date(value).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Kolkata' })
+const quarterHours = Array.from({ length: 96 }, (_, index) => {
+  const hours = String(Math.floor(index / 4)).padStart(2, '0')
+  const minutes = String((index % 4) * 15).padStart(2, '0')
+  return `${hours}:${minutes}`
+})
+const areaImages = [
+  'https://images.unsplash.com/photo-1553778263-73a83bab9b0c?auto=format&fit=crop&w=900&q=80',
+  'https://images.unsplash.com/photo-1526232761682-d26e03ac148e?auto=format&fit=crop&w=900&q=80',
+  'https://images.unsplash.com/photo-1579952363873-27f3bade9f55?auto=format&fit=crop&w=900&q=80',
+]
 
 function AuthForm({ mode, onSuccess, onSwitch }) {
   const [form, setForm] = useState({ name: '', email: '', phone: '', password: '' })
@@ -31,15 +41,22 @@ function AuthForm({ mode, onSuccess, onSwitch }) {
   </form>
 }
 
-function BookingPanel({ user, onAuth, onRefresh }) {
-  const [form, setForm] = useState({ location: locations[0], game: games[0], date: today(), startTime: '18:00', durationHours: 1, paymentMethod: 'cash' })
+function BookingPanel({ user, onAuth, onRefresh, initialLocation }) {
+  const [form, setForm] = useState({ location: initialLocation || locations[0], game: games[0], date: today(), startTime: '18:00', durationHours: 1, paymentMethod: 'cash' })
   const [bookings, setBookings] = useState([])
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
   const [rate, setRate] = useState(500)
+  const [renderedAt] = useState(Date.now)
   const update = (key, value) => setForm({ ...form, [key]: value })
   useEffect(() => { api('/payment-options').then((data) => { setRate(data.hourlyRateInr) }).catch(() => {}) }, [])
   useEffect(() => { api(`/bookings?location=${encodeURIComponent(form.location)}&date=${form.date}`).then((data) => setBookings(data.bookings)).catch(() => setBookings([])) }, [form.location, form.date])
+  const isUnavailable = (time) => {
+    const start = new Date(`${form.date}T${time}:00+05:30`).getTime()
+    const end = start + Number(form.durationHours) * 60 * 60 * 1000
+    if (start <= renderedAt) return true
+    return bookings.some((booking) => start < new Date(booking.endAt).getTime() && end > new Date(booking.startAt).getTime())
+  }
   const submit = async (event) => {
     event.preventDefault(); setError(''); setMessage('')
     if (!user) { onAuth('login'); return }
@@ -67,8 +84,13 @@ function BookingPanel({ user, onAuth, onRefresh }) {
       {error && <p className="error full">{error}</p>}{message && <p className="success full">{message}</p>}
       <button className="primary full"> {user ? 'Confirm booking' : 'Sign in to book'} <span>→</span></button>
     </form>
+    <div className="time-grid"><h3>Live availability · choose a start time</h3><div>{quarterHours.map((time) => <button type="button" key={time} className={form.startTime === time ? 'selected' : ''} disabled={isUnavailable(time)} onClick={() => update('startTime', time)}>{time}</button>)}</div></div>
     <div className="availability"><h3>Confirmed times on {form.date}</h3>{bookings.length ? bookings.map((item) => <p key={item.id}><strong>{item.game}</strong> · {prettyTime(item.startAt)}–{prettyTime(item.endAt)} · {item.id.slice(-8).toUpperCase()}</p>) : <p>No bookings yet for this date.</p>}</div>
   </section>
+}
+
+function AreaDiscovery({ onChoose }) {
+  return <section className="areas-section" id="areas"><div><p className="eyebrow dark">PLAY LOCAL</p><h2>Find your <em>area.</em></h2><p>Explore Fieldhouse availability across the Coimbatore region. Photos are illustrative; ratings come from verified player reviews.</p></div><div className="area-grid">{locations.map((location, index) => <button type="button" className="area-card" key={location} onClick={() => onChoose(location)}><img src={areaImages[index % areaImages.length]} alt="" /><span>{location}</span><small>Live availability · 5 game formats</small></button>)}</div></section>
 }
 
 function Account({ user, onRefresh }) {
@@ -93,21 +115,23 @@ function Reviews() {
 }
 
 function Admin() {
-  const [admin, setAdmin] = useState(null); const [form, setForm] = useState({ email: '', password: '' }); const [bookings, setBookings] = useState([]); const [analytics, setAnalytics] = useState(null); const [error, setError] = useState('')
-  const load = async () => { try { const session = await api('/admin/session'); if (!session.admin) return; setAdmin(session.admin); const [list, stats] = await Promise.all([api('/admin/bookings'), api('/admin/analytics')]); setBookings(list.bookings); setAnalytics(stats) } catch (err) { setError(err.message) } }
+  const [admin, setAdmin] = useState(null); const [form, setForm] = useState({ email: '', password: '' }); const [bookings, setBookings] = useState([]); const [analytics, setAnalytics] = useState(null); const [error, setError] = useState(''); const [rate, setRate] = useState(500)
+  const load = async () => { try { const session = await api('/admin/session'); if (!session.admin) return; setAdmin(session.admin); setRate(session.hourlyRateInr || 500); const [list, stats] = await Promise.all([api('/admin/bookings'), api('/admin/analytics')]); setBookings(list.bookings); setAnalytics(stats) } catch (err) { setError(err.message) } }
   useEffect(() => { load() }, [])
   const login = async (e) => { e.preventDefault(); try { await api('/admin/login', { method: 'POST', body: JSON.stringify(form) }); load() } catch (err) { setError(err.message) } }
   if (!admin) return <form className="panel auth-form" onSubmit={login}><h2>Admin dashboard</h2><label>Email<input type="email" required value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} /></label><label>Password<input type="password" required value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} /></label>{error && <p className="error">{error}</p>}<button className="primary">Sign in as admin</button></form>
   const cancel = async (id) => { try { await api(`/admin/bookings/${id}/cancel`, { method: 'PATCH' }); load() } catch (err) { setError(err.message) } }
-  return <section className="panel account"><h2>Admin dashboard</h2>{analytics && <div className="stat-grid admin-stats"><div><strong>{analytics.totalBookings}</strong><span>Total bookings</span></div><div><strong>{analytics.cancelledBookings}</strong><span>Cancelled</span></div><div><strong>{money(analytics.collectedRevenueInr)}</strong><span>Collected revenue</span></div></div>}{error && <p className="error">{error}</p>}<h3>Latest bookings</h3>{bookings.map((item) => <article className="booking-card" key={item.id}><div><strong>{item.reference}</strong><p>{item.contactName} · {item.contactPhone}</p><p>{item.location} · {item.game} · {prettyDate(item.startAt)}</p></div><div><span>{item.status}</span>{item.status === 'confirmed' && <button className="danger" onClick={() => cancel(item.id)}>Cancel</button>}</div></article>)}</section>
+  const updateRate = async () => { try { await api('/admin/settings/hourly-rate', { method: 'PATCH', body: JSON.stringify({ hourlyRateInr: Number(rate) }) }); setError('Hourly rate updated.') } catch (err) { setError(err.message) } }
+  return <section className="panel account"><h2>Admin dashboard</h2><div className="admin-rate"><label>New hourly rate<input type="number" min="1" value={rate} onChange={(e) => setRate(e.target.value)} /></label><button className="primary" onClick={updateRate}>Save price</button></div>{analytics && <div className="stat-grid admin-stats"><div><strong>{analytics.totalBookings}</strong><span>Total bookings</span></div><div><strong>{analytics.cancelledBookings}</strong><span>Cancelled</span></div><div><strong>{money(analytics.collectedRevenueInr)}</strong><span>Collected revenue</span></div></div>}{error && <p className="success">{error}</p>}<h3>Latest bookings</h3>{bookings.map((item) => <article className="booking-card" key={item.id}><div><strong>{item.reference}</strong><p>{item.contactName} · {item.contactPhone}</p><p>{item.location} · {item.game} · {prettyDate(item.startAt)}</p></div><div><span>{item.status}</span>{item.status === 'confirmed' && <button className="danger" onClick={() => cancel(item.id)}>Cancel</button>}</div></article>)}</section>
 }
 
 function App() {
-  const [user, setUser] = useState(null); const [view, setView] = useState(window.location.pathname === '/admin' ? 'admin' : 'home'); const [auth, setAuth] = useState(null)
+  const [user, setUser] = useState(null); const [view, setView] = useState(window.location.pathname === '/admin' ? 'admin' : 'home'); const [auth, setAuth] = useState(null); const [selectedLocation, setSelectedLocation] = useState(null)
   const refresh = () => api('/auth/me').then((data) => setUser(data.user)).catch(() => setUser(null))
   useEffect(() => { refresh(); const script = document.createElement('script'); script.src = 'https://checkout.razorpay.com/v1/checkout.js'; script.async = true; document.body.appendChild(script); return () => script.remove() }, [])
   const logout = async () => { await api('/auth/logout', { method: 'POST' }); setUser(null); setView('home') }
-  return <main><section className="hero" id="home"><nav className="nav shell"><a className="brand" href="#home"><span className="brand-mark">F</span><span>fieldhouse</span></a><div className="nav-links"><a href="#book">Book a pitch</a><a href="#reviews">Reviews</a>{user ? <><button className="nav-button" onClick={() => setView('account')}>My bookings</button><button className="nav-button" onClick={logout}>Log out</button></> : <button className="nav-button" onClick={() => setAuth('login')}>Sign in</button>}</div></nav><div className="hero-content shell"><p className="eyebrow">COIMBATORE'S HOME OF YOUR GAME <span></span> EST. 2018</p><h1>Your next<br /><em>match</em> starts here.</h1><p className="hero-copy">Premium pitches across Coimbatore and Pollachi.<br />Easy booking. More time playing.</p><a className="round-arrow" href="#book">↘</a></div></section><div className="content shell">{view === 'admin' ? <Admin /> : view === 'account' && user ? <Account user={user} onRefresh={refresh} /> : <><BookingPanel user={user} onAuth={setAuth} onRefresh={refresh} /><section className="numbers-section" id="community"><p className="eyebrow dark">THE FIELDHOUSE STANDARD</p><h2>Made for <em>the beautiful game.</em></h2><div className="stat-grid"><div><strong>11</strong><span>LOCAL AREAS</span></div><div><strong>4.9</strong><span>PLAYER RATING</span></div><div><strong>24/7</strong><span>ONLINE BOOKING</span></div></div></section><Reviews /></>}</div>{auth && <div className="modal"><button className="close" onClick={() => setAuth(null)}>×</button><AuthForm mode={auth} onSuccess={(account) => { setUser(account); setAuth(null) }} onSwitch={() => setAuth(auth === 'login' ? 'register' : 'login')} /></div>}</main>
+  const chooseArea = (location) => { setSelectedLocation(location); document.getElementById('book')?.scrollIntoView({ behavior: 'smooth' }) }
+  return <main><section className="hero" id="home"><nav className="nav shell"><a className="brand" href="#home"><span className="brand-mark">F</span><span>fieldhouse</span></a><div className="nav-links"><a href="#areas">Areas</a><a href="#book">Book a pitch</a><a href="#reviews">Reviews</a>{user ? <><button className="nav-button" onClick={() => setView('account')}>My bookings</button><button className="nav-button" onClick={logout}>Log out</button></> : <button className="nav-button" onClick={() => setAuth('login')}>Sign in</button>}</div></nav><div className="hero-content shell"><p className="eyebrow">COIMBATORE'S HOME OF YOUR GAME <span></span> EST. 2018</p><h1>Your next<br /><em>match</em> starts here.</h1><p className="hero-copy">Premium pitches across Coimbatore and Pollachi.<br />Easy booking. More time playing.</p><a className="round-arrow" href="#book">↘</a></div></section><div className="content shell">{view === 'admin' ? <Admin /> : view === 'account' && user ? <Account user={user} onRefresh={refresh} /> : <><AreaDiscovery onChoose={chooseArea} /><BookingPanel key={selectedLocation || 'default'} user={user} initialLocation={selectedLocation} onAuth={setAuth} onRefresh={refresh} /><section className="numbers-section" id="community"><p className="eyebrow dark">THE FIELDHOUSE STANDARD</p><h2>Made for <em>the beautiful game.</em></h2><div className="stat-grid"><div><strong>11</strong><span>LOCAL AREAS</span></div><div><strong>4.9</strong><span>PLAYER RATING</span></div><div><strong>24/7</strong><span>ONLINE BOOKING</span></div></div></section><Reviews /></>}</div>{auth && <div className="modal"><button className="close" onClick={() => setAuth(null)}>×</button><AuthForm mode={auth} onSuccess={(account) => { setUser(account); setAuth(null) }} onSwitch={() => setAuth(auth === 'login' ? 'register' : 'login')} /></div>}</main>
 }
 
 export default App
